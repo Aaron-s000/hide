@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Color Copy Game</title>
+<style>
+    body {
+        margin: 0;
+        background: #111;
+        overflow: hidden;
+        font-family: Arial;
+    }
+    canvas {
+        display: block;
+        margin: 0 auto;
+        background: #222;
+    }
+    #info {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: white;
+        font-size: 14px;
+    }
+</style>
+</head>
+<body>
+
+<div id="info">
+Move: WASD | Copy color: SPACE | Goal: reach green zone
+</div>
+
+<canvas id="game" width="800" height="500"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const player = {
+    x: 50,
+    y: 50,
+    size: 20,
+    color: "white",
+    copiedColor: null,
+    speed: 3
+};
+
+const goal = { x: 700, y: 400, size: 40 };
+
+const zones = [
+    { x: 100, y: 100, size: 60, color: "red" },
+    { x: 300, y: 200, size: 60, color: "blue" },
+    { x: 500, y: 300, size: 60, color: "yellow" }
+];
+
+const keys = {};
+
+document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+function rectCollision(a, b) {
+    return a.x < b.x + b.size &&
+           a.x + a.size > b.x &&
+           a.y < b.y + b.size &&
+           a.y + a.size > b.y;
+}
+
+function update() {
+    if (keys["w"]) player.y -= player.speed;
+    if (keys["s"]) player.y += player.speed;
+    if (keys["a"]) player.x -= player.speed;
+    if (keys["d"]) player.x += player.speed;
+
+    // copy color
+    if (keys[" "]) {
+        zones.forEach(z => {
+            if (rectCollision(player, z)) {
+                player.copiedColor = z.color;
+            }
+        });
+    }
+
+    // win condition
+    if (rectCollision(player, goal)) {
+        alert("YOU WIN. No excuses. Next level coming soon.");
+        player.x = 50;
+        player.y = 50;
+    }
+}
+
+function drawRect(obj, colorOverride = null) {
+    ctx.fillStyle = colorOverride || obj.color;
+    ctx.fillRect(obj.x, obj.y, obj.size, obj.size);
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // zones
+    zones.forEach(z => drawRect(z));
+
+    // goal
+    drawRect(goal, "green");
+
+    // player color logic
+    let displayColor = player.copiedColor || "white";
+
+    ctx.fillStyle = displayColor;
+    ctx.fillRect(player.x, player.y, player.size, player.size);
+
+    ctx.fillStyle = "white";
+    ctx.fillText("Current Color: " + displayColor, 10, 470);
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
