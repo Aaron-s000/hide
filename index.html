@@ -2,117 +2,178 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Color Copy Game</title>
+<title>Chameleon Draw World</title>
 <style>
     body {
         margin: 0;
-        background: #111;
         overflow: hidden;
-        font-family: Arial;
+        background: #0f0f0f;
     }
     canvas {
         display: block;
-        margin: 0 auto;
-        background: #222;
     }
-    #info {
-        position: absolute;
+    #ui {
+        position: fixed;
         top: 10px;
         left: 10px;
         color: white;
+        font-family: Arial;
         font-size: 14px;
+        z-index: 10;
     }
 </style>
 </head>
 <body>
 
-<div id="info">
-Move: WASD | Copy color: SPACE | Goal: reach green zone
+<div id="ui">
+WASD = move | SPACE = copy color | MOUSE = draw platforms
 </div>
 
-<canvas id="game" width="800" height="500"></canvas>
+<canvas id="c"></canvas>
 
 <script>
-const canvas = document.getElementById("game");
+const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
+function resize(){
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resize);
+resize();
+
+// PLAYER
 const player = {
-    x: 50,
-    y: 50,
+    x: 100,
+    y: 100,
     size: 20,
+    speed: 3,
     color: "white",
-    copiedColor: null,
-    speed: 3
+    copied: null
 };
 
-const goal = { x: 700, y: 400, size: 40 };
+// GOAL
+const goal = {
+    x: 1200,
+    y: 600,
+    size: 40,
+    color: "lime"
+};
 
+// COLOR ZONES (copy stations)
 const zones = [
-    { x: 100, y: 100, size: 60, color: "red" },
-    { x: 300, y: 200, size: 60, color: "blue" },
-    { x: 500, y: 300, size: 60, color: "yellow" }
+    {x:200,y:200,s:80,color:"red"},
+    {x:600,y:300,s:80,color:"blue"},
+    {x:900,y:500,s:80,color:"yellow"}
 ];
 
-const keys = {};
+// DRAWN PLATFORMS
+let platforms = [];
 
+// INPUT
+const keys = {};
 document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
-function rectCollision(a, b) {
-    return a.x < b.x + b.size &&
+// MOUSE DRAW
+let drawing = false;
+canvas.addEventListener("mousedown", () => drawing = true);
+canvas.addEventListener("mouseup", () => drawing = false);
+canvas.addEventListener("mousemove", e => {
+    if (!drawing) return;
+
+    platforms.push({
+        x: e.clientX,
+        y: e.clientY,
+        w: 60,
+        h: 20,
+        color: "gray"
+    });
+});
+
+// COLLISION
+function hit(a,b){
+    return a.x < b.x + b.w &&
            a.x + a.size > b.x &&
-           a.y < b.y + b.size &&
+           a.y < b.y + b.h &&
            a.y + a.size > b.y;
 }
 
-function update() {
-    if (keys["w"]) player.y -= player.speed;
-    if (keys["s"]) player.y += player.speed;
-    if (keys["a"]) player.x -= player.speed;
-    if (keys["d"]) player.x += player.speed;
+// RECT FOR ZONES
+function hitZone(p,z){
+    return p.x < z.x + z.s &&
+           p.x + p.size > z.x &&
+           p.y < z.y + z.s &&
+           p.y + p.size > z.y;
+}
+
+function update(){
+    let dx = 0, dy = 0;
+
+    if(keys["w"]) dy -= player.speed;
+    if(keys["s"]) dy += player.speed;
+    if(keys["a"]) dx -= player.speed;
+    if(keys["d"]) dx += player.speed;
+
+    player.x += dx;
+    player.y += dy;
 
     // copy color
-    if (keys[" "]) {
-        zones.forEach(z => {
-            if (rectCollision(player, z)) {
-                player.copiedColor = z.color;
+    if(keys[" "]){
+        zones.forEach(z=>{
+            if(hitZone(player,z)){
+                player.copied = z.color;
             }
         });
     }
 
-    // win condition
-    if (rectCollision(player, goal)) {
-        alert("YOU WIN. No excuses. Next level coming soon.");
-        player.x = 50;
-        player.y = 50;
+    // gravity-ish clamp
+    player.y += 1;
+
+    // platform collision (simple)
+    for(let p of platforms){
+        if(hit(player,p)){
+            player.y = p.y - player.size;
+        }
+    }
+
+    // win
+    if(hitZone(player, goal)){
+        alert("LEVEL CLEAR. Build harder. Move faster.");
+        player.x = 100;
+        player.y = 100;
     }
 }
 
-function drawRect(obj, colorOverride = null) {
-    ctx.fillStyle = colorOverride || obj.color;
-    ctx.fillRect(obj.x, obj.y, obj.size, obj.size);
-}
-
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
 
     // zones
-    zones.forEach(z => drawRect(z));
+    zones.forEach(z=>{
+        ctx.fillStyle = z.color;
+        ctx.fillRect(z.x,z.y,z.s,z.s);
+    });
 
     // goal
-    drawRect(goal, "green");
+    ctx.fillStyle = goal.color;
+    ctx.fillRect(goal.x,goal.y,goal.size,goal.size);
 
-    // player color logic
-    let displayColor = player.copiedColor || "white";
+    // platforms
+    for(let p of platforms){
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x,p.y,p.w,p.h);
+    }
 
-    ctx.fillStyle = displayColor;
-    ctx.fillRect(player.x, player.y, player.size, player.size);
+    // player color rule
+    let c = player.copied || "white";
+    ctx.fillStyle = c;
+    ctx.fillRect(player.x,player.y,player.size,player.size);
 
     ctx.fillStyle = "white";
-    ctx.fillText("Current Color: " + displayColor, 10, 470);
+    ctx.fillText("Color: " + c, 20, 20);
 }
 
-function loop() {
+function loop(){
     update();
     draw();
     requestAnimationFrame(loop);
