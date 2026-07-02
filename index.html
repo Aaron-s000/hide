@@ -2,183 +2,244 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Chameleon Draw World</title>
+<title>Chameleon Engine</title>
 <style>
-    body {
-        margin: 0;
-        overflow: hidden;
-        background: #0f0f0f;
-    }
-    canvas {
-        display: block;
-    }
-    #ui {
-        position: fixed;
-        top: 10px;
-        left: 10px;
-        color: white;
-        font-family: Arial;
-        font-size: 14px;
-        z-index: 10;
-    }
+body { margin:0; overflow:hidden; background:#0b0b0b; }
+canvas { display:block; }
+#ui {
+    position:fixed;
+    top:10px; left:10px;
+    color:white;
+    font-family:Arial;
+    font-size:13px;
+    z-index:10;
+    background:rgba(0,0,0,0.4);
+    padding:10px;
+}
 </style>
 </head>
 <body>
 
 <div id="ui">
-WASD = move | SPACE = copy color | MOUSE = draw platforms
+WASD move | SPACE jump | SHIFT copy color | MOUSE draw | Z undo | R reset | S save
 </div>
 
 <canvas id="c"></canvas>
 
 <script>
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
+const c = document.getElementById("c");
+const ctx = c.getContext("2d");
 
 function resize(){
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    c.width = innerWidth;
+    c.height = innerHeight;
 }
-window.addEventListener("resize", resize);
+addEventListener("resize", resize);
 resize();
 
+// CAMERA
+const cam = {x:0,y:0};
+
 // PLAYER
-const player = {
-    x: 100,
-    y: 100,
-    size: 20,
-    speed: 3,
-    color: "white",
-    copied: null
+const p = {
+    x:100,y:100,w:20,h:20,
+    vx:0,vy:0,
+    speed:3,
+    jump:10,
+    grounded:false,
+    color:"white",
+    copied:null
 };
 
 // GOAL
-const goal = {
-    x: 1200,
-    y: 600,
-    size: 40,
-    color: "lime"
-};
+const goal = {x:2000,y:300,w:40,h:40};
 
-// COLOR ZONES (copy stations)
+// ZONES (color copy stations)
 const zones = [
-    {x:200,y:200,s:80,color:"red"},
-    {x:600,y:300,s:80,color:"blue"},
-    {x:900,y:500,s:80,color:"yellow"}
+    {x:300,y:200,w:100,h:100,color:"red"},
+    {x:900,y:400,w:100,h:100,color:"blue"},
+    {x:1500,y:300,w:100,h:100,color:"yellow"}
 ];
 
-// DRAWN PLATFORMS
-let platforms = [];
+// ENEMIES
+let enemies = [
+    {x:600,y:200,w:20,h:20,dir:1},
+    {x:1200,y:200,w:20,h:20,dir:-1}
+];
+
+// LEVEL DATA (drawn)
+let blocks = [];
+let history = [];
 
 // INPUT
-const keys = {};
-document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
-document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+const k = {};
+addEventListener("keydown", e=>k[e.key.toLowerCase()]=true);
+addEventListener("keyup", e=>k[e.key.toLowerCase()]=false);
 
-// MOUSE DRAW
+// DRAW MODE
 let drawing = false;
-canvas.addEventListener("mousedown", () => drawing = true);
-canvas.addEventListener("mouseup", () => drawing = false);
-canvas.addEventListener("mousemove", e => {
-    if (!drawing) return;
+addEventListener("mousedown", ()=>drawing=true);
+addEventListener("mouseup", ()=>drawing=false);
 
-    platforms.push({
-        x: e.clientX,
-        y: e.clientY,
-        w: 60,
+addEventListener("mousemove", e=>{
+    if(!drawing) return;
+    const rect = c.getBoundingClientRect();
+
+    blocks.push({
+        x: e.clientX + cam.x,
+        y: e.clientY + cam.y,
+        w: 80,
         h: 20,
-        color: "gray"
+        color:"gray"
     });
 });
 
-// COLLISION
-function hit(a,b){
-    return a.x < b.x + b.w &&
-           a.x + a.size > b.x &&
-           a.y < b.y + b.h &&
-           a.y + a.size > b.y;
+// PHYSICS
+function collide(a,b){
+    return a.x < b.x+b.w &&
+           a.x+a.w > b.x &&
+           a.y < b.y+b.h &&
+           a.y+a.h > b.y;
 }
 
-// RECT FOR ZONES
-function hitZone(p,z){
-    return p.x < z.x + z.s &&
-           p.x + p.size > z.x &&
-           p.y < z.y + z.s &&
-           p.y + p.size > z.y;
+// ZONE CHECK
+function inZone(z){
+    return p.x < z.x+z.w &&
+           p.x+p.w > z.x &&
+           p.y < z.y+z.h &&
+           p.y+p.h > z.y;
 }
 
+// SAVE
+function save(){
+    localStorage.setItem("level", JSON.stringify(blocks));
+}
+
+// LOAD
+function load(){
+    const d = localStorage.getItem("level");
+    if(d) blocks = JSON.parse(d);
+}
+load();
+
+// UPDATE
 function update(){
-    let dx = 0, dy = 0;
 
-    if(keys["w"]) dy -= player.speed;
-    if(keys["s"]) dy += player.speed;
-    if(keys["a"]) dx -= player.speed;
-    if(keys["d"]) dx += player.speed;
+    // movement
+    if(k["a"]) p.vx = -p.speed;
+    else if(k["d"]) p.vx = p.speed;
+    else p.vx *= 0.8;
 
-    player.x += dx;
-    player.y += dy;
+    if(k["w"] && p.grounded){
+        p.vy = -p.jump;
+        p.grounded = false;
+    }
 
     // copy color
-    if(keys[" "]){
+    if(k[" "]){
         zones.forEach(z=>{
-            if(hitZone(player,z)){
-                player.copied = z.color;
-            }
+            if(inZone(z)) p.copied = z.color;
         });
     }
 
-    // gravity-ish clamp
-    player.y += 1;
+    // gravity
+    p.vy += 0.5;
 
-    // platform collision (simple)
-    for(let p of platforms){
-        if(hit(player,p)){
-            player.y = p.y - player.size;
+    p.x += p.vx;
+    p.y += p.vy;
+
+    p.grounded = false;
+
+    // collision blocks
+    for(let b of blocks){
+        if(collide(p,b)){
+            if(p.vy > 0){
+                p.y = b.y - p.h;
+                p.vy = 0;
+                p.grounded = true;
+            }
+        }
+    }
+
+    // enemies AI
+    for(let e of enemies){
+        e.x += e.dir * 2;
+        if(e.x < 400 || e.x > 1600) e.dir *= -1;
+
+        if(collide(p,e)){
+            p.x = 100; p.y = 100;
         }
     }
 
     // win
-    if(hitZone(player, goal)){
-        alert("LEVEL CLEAR. Build harder. Move faster.");
-        player.x = 100;
-        player.y = 100;
+    if(collide(p,goal)){
+        alert("YOU MADE IT. NOW MAKE IT HARDER.");
+        p.x = 100; p.y = 100;
     }
+
+    // camera follow
+    cam.x = p.x - innerWidth/2;
+    cam.y = p.y - innerHeight/2;
 }
 
+// DRAW
 function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.clearRect(0,0,c.width,c.height);
+
+    ctx.save();
+    ctx.translate(-cam.x,-cam.y);
 
     // zones
     zones.forEach(z=>{
-        ctx.fillStyle = z.color;
-        ctx.fillRect(z.x,z.y,z.s,z.s);
+        ctx.fillStyle=z.color;
+        ctx.fillRect(z.x,z.y,z.w,z.h);
     });
 
     // goal
-    ctx.fillStyle = goal.color;
-    ctx.fillRect(goal.x,goal.y,goal.size,goal.size);
+    ctx.fillStyle="lime";
+    ctx.fillRect(goal.x,goal.y,goal.w,goal.h);
 
-    // platforms
-    for(let p of platforms){
-        ctx.fillStyle = p.color;
-        ctx.fillRect(p.x,p.y,p.w,p.h);
-    }
+    // blocks
+    blocks.forEach(b=>{
+        ctx.fillStyle=b.color;
+        ctx.fillRect(b.x,b.y,b.w,b.h);
+    });
 
-    // player color rule
-    let c = player.copied || "white";
-    ctx.fillStyle = c;
-    ctx.fillRect(player.x,player.y,player.size,player.size);
+    // enemies
+    enemies.forEach(e=>{
+        ctx.fillStyle="red";
+        ctx.fillRect(e.x,e.y,e.w,e.h);
+    });
 
-    ctx.fillStyle = "white";
-    ctx.fillText("Color: " + c, 20, 20);
+    // player
+    ctx.fillStyle = p.copied || "white";
+    ctx.fillRect(p.x,p.y,p.w,p.h);
+
+    ctx.restore();
+
+    ctx.fillStyle="white";
+    ctx.fillText("Color: "+(p.copied||"none"),20,20);
 }
+
+// CONTROLS
+addEventListener("keydown", e=>{
+    if(e.key.toLowerCase()=="z"){
+        blocks.pop();
+    }
+    if(e.key.toLowerCase()=="r"){
+        blocks=[];
+        localStorage.removeItem("level");
+    }
+    if(e.key.toLowerCase()=="s"){
+        save();
+    }
+});
 
 function loop(){
     update();
     draw();
     requestAnimationFrame(loop);
 }
-
 loop();
 </script>
 
